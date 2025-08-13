@@ -1,0 +1,45 @@
+# Python build / runtime artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.dll
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+.eggs/
+wheelhouse/
+
+# Caches / tooling
+.pytest_cache/
+.mypy_cache/
+.cache/
+coverage.xml
+htmlcov/
+.coverage*
+
+# Logs / temp
+*.log
+*.tmp
+*.bak
+
+# IDE/editor
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.swp
