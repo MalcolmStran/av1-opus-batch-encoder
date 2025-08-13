@@ -1,5 +1,27 @@
 AV1 Encoder (NVENC) — Batch convert folders to AV1 + Opus
 
+Requirements
+- NVIDIA GPU with AV1 NVENC support (e.g. RTX 40‑series, some later Ada / Hopper based cards). Older GPUs without av1_nvenc will not work.
+- Recent NVIDIA driver (ensure the driver exposes AV1 encode in supported apps).
+- FFmpeg build including av1_nvenc and libopus (check with `ffmpeg -hide_banner -encoders | find "av1_nvenc"`).
+- ffprobe (ships with FFmpeg) accessible in PATH.
+- Python 3.9+ (tested on 3.11+).
+- Sufficient free disk space on the same drive as the media (temporary output written there unless `--temp-dir` same drive).
+
+Optional but recommended
+- Use a recent FFmpeg build (2024+) for better AV1 NVENC stability & performance.
+- Run a dry run first to validate traversal.
+
+Installation
+Clone or download, then install (editable) to expose the console script:
+```powershell
+pip install -e .
+```
+Or invoke directly with Python without installation:
+```powershell
+python -m av1_encoder -i "D:\Media"
+```
+
 Quick start (default settings)
 ```powershell
 python -m av1_encoder -i "D:\\Media"
@@ -66,5 +88,13 @@ Troubleshooting
 - Temp move cross-drive: specify --temp-dir on same drive or rely on default (source folder).
 - Silent/mute multichannel: layout now auto-fixed or downmixed; report remaining cases.
 
+Credits
+- FFmpeg project (core transcoding tools) — https://ffmpeg.org/
+- NVIDIA NVENC hardware encoder.
+- Opus codec (Xiph.Org / RFC 6716) via libopus.
+- Channel layout heuristics & remap logic inspired by common community guidance for Opus mappings.
+
 License
-MIT
+Copyright (c) 2025
+
+Released under the MIT License. See `LICENSE` file for full text.
