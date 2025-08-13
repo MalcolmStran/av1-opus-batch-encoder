@@ -5,8 +5,6 @@ __pycache__/
 *.pyd
 *.so
 *.dll
-*.exe
-*.spec
 
 # Virtual environments
 .env
@@ -20,6 +18,13 @@ dist/
 *.egg-info/
 .eggs/
 wheelhouse/
+
+# Build files (not tracked in repo)
+*.spec
+ffmpeg_portable/
+download_ffmpeg.py
+requirements-build.txt
+build_exe.bat
 
 # Caches / tooling
 .pytest_cache/
