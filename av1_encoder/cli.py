@@ -34,19 +34,49 @@ FFPROBE_STREAMS = [
 FFPROBE_FORMAT = ["format_name,format_long_name,tags"]
 
 
-def has_ffprobe() -> bool:
+def resolve_ffmpeg_dir(explicit: Optional[str] = None) -> Optional[Path]:
+    """Try to locate a bundled ffmpeg directory if provided.
+
+    Search order:
+      1. explicit path (argument)
+      2. environment AV1_ENCODER_FFMPEG_DIR
+      3. ./ffmpeg relative to script or frozen executable
+    Returns directory Path or None.
+    """
+    candidates = []
+    if explicit:
+        candidates.append(Path(explicit))
+    env_dir = os.environ.get("AV1_ENCODER_FFMPEG_DIR")
+    if env_dir:
+        candidates.append(Path(env_dir))
+    # Frozen bundle base dir
+    base_dir = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent.parent))
+    candidates.append(base_dir / "ffmpeg")
+    for c in candidates:
+        if c and c.exists() and (c / "ffmpeg.exe").exists() and (c / "ffprobe.exe").exists():
+            return c
+    return None
+
+
+def ffmpeg_paths(ffmpeg_dir: Optional[Path]):
+    """Return (ffmpeg_exe, ffprobe_exe) names or absolute paths."""
+    if ffmpeg_dir:
+        return str(ffmpeg_dir / "ffmpeg.exe"), str(ffmpeg_dir / "ffprobe.exe")
+    return "ffmpeg", "ffprobe"
+
+
+def has_ffprobe(ffprobe_bin: str) -> bool:
     try:
-        proc = subprocess.run(["ffprobe", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc = subprocess.run([ffprobe_bin, "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return proc.returncode == 0
     except Exception:
         return False
 
 
-def has_av1_nvenc() -> bool:
+def has_av1_nvenc(ffmpeg_bin: str) -> bool:
     try:
-        # Query encoder help; returns 0 if available
         proc = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-h", "encoder=av1_nvenc"],
+            [ffmpeg_bin, "-hide_banner", "-h", "encoder=av1_nvenc"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             text=True,
@@ -60,7 +90,7 @@ def has_av1_nvenc() -> bool:
 _AV1_NVENC_OPTIONS: Optional[set] = None
 
 
-def get_av1_nvenc_options() -> set:
+def get_av1_nvenc_options(ffmpeg_bin: str) -> set:
     """Return a set of av1_nvenc option names supported by this ffmpeg build."""
     global _AV1_NVENC_OPTIONS
     if _AV1_NVENC_OPTIONS is not None:
@@ -68,7 +98,7 @@ def get_av1_nvenc_options() -> set:
     opts: set = set()
     try:
         res = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-h", "encoder=av1_nvenc"],
+            [ffmpeg_bin, "-hide_banner", "-h", "encoder=av1_nvenc"],
             capture_output=True,
             text=True,
         )
@@ -89,12 +119,12 @@ def get_av1_nvenc_options() -> set:
     return opts
 
 
-def run_ffprobe(path: Path) -> Optional[dict]:
+def run_ffprobe(path: Path, ffprobe_bin: str) -> Optional[dict]:
     try:
         # Use a single -show_entries specifying both sections
         entries = f"stream={FFPROBE_STREAMS[0].split(':')[-1]}:format={FFPROBE_FORMAT[0]}"
         cmd = [
-            "ffprobe",
+            ffprobe_bin,
             "-v",
             "error",
             "-print_format",
@@ -115,8 +145,8 @@ def run_ffprobe(path: Path) -> Optional[dict]:
         return None
 
 
-def probe_media(path: Path) -> Optional[MediaInfo]:
-    data = run_ffprobe(path)
+def probe_media(path: Path, ffprobe_bin: str) -> Optional[MediaInfo]:
+    data = run_ffprobe(path, ffprobe_bin)
     if not data:
         return None
 
@@ -184,10 +214,11 @@ def build_ffmpeg_cmd(
     target_bitrate: Optional[str],
     audio_bitrate: str,
     extra_video_args: List[str],
+    ffmpeg_bin: str,
 ) -> List[str]:
     # Base command
     cmd = [
-        "ffmpeg",
+    ffmpeg_bin,
         "-hide_banner",
         "-y",
         "-nostdin",
@@ -249,7 +280,7 @@ def build_ffmpeg_cmd(
         ]
 
     # Conditionally enable Spatial/Temporal AQ if supported by this ffmpeg build
-    nvenc_opts = get_av1_nvenc_options()
+    nvenc_opts = get_av1_nvenc_options(ffmpeg_bin)
     if "spatial_aq" in nvenc_opts:
         v_args += ["-spatial_aq", "1"]
     if "temporal_aq" in nvenc_opts:
@@ -383,8 +414,10 @@ def process_file(
     extra_video_args: List[str],
     force: bool,
     temp_dir: Optional[Path],
+    ffmpeg_bin: str,
+    ffprobe_bin: str,
 ) -> Tuple[bool, str]:
-    info = probe_media(path)
+    info = probe_media(path, ffprobe_bin)
     if info is None:
         return False, f"Probe failed: {path}"
 
@@ -418,7 +451,7 @@ def process_file(
     chosen_tmp_dir.mkdir(parents=True, exist_ok=True)
     tmp_out = chosen_tmp_dir / tmp_name
 
-    cmd = build_ffmpeg_cmd(path, tmp_out, info, cq, target_bitrate, audio_bitrate, extra_video_args)
+    cmd = build_ffmpeg_cmd(path, tmp_out, info, cq, target_bitrate, audio_bitrate, extra_video_args, ffmpeg_bin)
 
     if dry_run:
         return True, "DRY-RUN ffmpeg " + " ".join(cmd[1:])
@@ -488,6 +521,8 @@ def walk_and_process(
     extra_video_args: List[str],
     force: bool,
     temp_dir: Optional[Path],
+    ffmpeg_bin: str,
+    ffprobe_bin: str,
 ) -> List[Tuple[Path, bool, str]]:
     allowed = {e.lower() if e.startswith(".") else "." + e.lower() for e in exts} if exts else None
     results = []
@@ -505,6 +540,8 @@ def walk_and_process(
                     extra_video_args,
                     force,
                     temp_dir,
+                    ffmpeg_bin,
+                    ffprobe_bin,
                 )
                 results.append((p, ok, msg))
     return results
@@ -527,6 +564,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--extra-video-args", nargs=argparse.REMAINDER, help="Extra args passed to ffmpeg after video opts")
     p.add_argument("--force", action="store_true", help="Re-encode even if already AV1 + Opus")
     p.add_argument("--temp-dir", default=None, help="Directory for temp files (must be on same drive as input to allow atomic replace; falls back to input folder if different drive)")
+    p.add_argument("--ffmpeg-dir", default=None, help="Directory containing ffmpeg.exe & ffprobe.exe (used first if provided or bundled)")
     return p.parse_args(argv)
 
 
@@ -539,11 +577,14 @@ def main(argv: Optional[List[str]] = None):
 
     extra_video_args = args.extra_video_args or []
 
-    if not has_ffprobe():
-        print("ffprobe not found; install FFmpeg (ffmpeg and ffprobe) and ensure it is in PATH.")
+    ffmpeg_dir = resolve_ffmpeg_dir(args.ffmpeg_dir)
+    ffmpeg_bin, ffprobe_bin = ffmpeg_paths(ffmpeg_dir)
+
+    if not has_ffprobe(ffprobe_bin):
+        print("ffprobe not found (looked for). Provide --ffmpeg-dir with ffmpeg.exe & ffprobe.exe or add to PATH.")
         sys.exit(3)
 
-    if not args.dry_run and not has_av1_nvenc():
+    if not args.dry_run and not has_av1_nvenc(ffmpeg_bin):
         print(
             "av1_nvenc encoder not available. Ensure you have an FFmpeg build with NVIDIA NVENC support and an RTX 40-series (or newer) GPU."
         )
@@ -562,6 +603,8 @@ def main(argv: Optional[List[str]] = None):
         extra_video_args=extra_video_args,
         force=args.force,
         temp_dir=Path(args.temp_dir) if args.temp_dir else None,
+        ffmpeg_bin=ffmpeg_bin,
+        ffprobe_bin=ffprobe_bin,
     )
 
     # Summary

@@ -22,6 +22,23 @@ Or invoke directly with Python without installation:
 python -m av1_encoder -i "D:\Media"
 ```
 
+Build a standalone EXE (PyInstaller)
+1. Install build deps:
+	```powershell
+	pip install pyinstaller
+	```
+2. Place your ffmpeg binaries in `ffmpeg/` folder at project root (expecting `ffmpeg.exe` and `ffprobe.exe`).
+3. Build:
+	```powershell
+	pyinstaller -F -n av1-encoder --add-data "ffmpeg/*;ffmpeg" -p av1_encoder av1_encoder/__main__.py
+	```
+4. Run the generated `dist\av1-encoder.exe`:
+	```powershell
+	.\dist\av1-encoder.exe -i "D:\Media"
+	```
+
+At runtime the program will first look for a bundled `ffmpeg` directory (same folder as the .exe), then `--ffmpeg-dir`, then PATH.
+
 Quick start (default settings)
 ```powershell
 python -m av1_encoder -i "D:\\Media"
