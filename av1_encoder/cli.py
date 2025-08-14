@@ -184,11 +184,14 @@ def build_ffmpeg_cmd(
     target_bitrate: Optional[str],
     audio_bitrate: str,
     extra_video_args: List[str],
+    log_level: str,
 ) -> List[str]:
     # Base command
     cmd = [
         "ffmpeg",
         "-hide_banner",
+        "-loglevel",
+        log_level,
         "-y",
         "-nostdin",
         "-i",
@@ -383,6 +386,7 @@ def process_file(
     extra_video_args: List[str],
     force: bool,
     temp_dir: Optional[Path],
+    log_level: str,
 ) -> Tuple[bool, str]:
     info = probe_media(path)
     if info is None:
@@ -418,7 +422,7 @@ def process_file(
     chosen_tmp_dir.mkdir(parents=True, exist_ok=True)
     tmp_out = chosen_tmp_dir / tmp_name
 
-    cmd = build_ffmpeg_cmd(path, tmp_out, info, cq, target_bitrate, audio_bitrate, extra_video_args)
+    cmd = build_ffmpeg_cmd(path, tmp_out, info, cq, target_bitrate, audio_bitrate, extra_video_args, log_level)
 
     if dry_run:
         return True, "DRY-RUN ffmpeg " + " ".join(cmd[1:])
@@ -488,6 +492,7 @@ def walk_and_process(
     extra_video_args: List[str],
     force: bool,
     temp_dir: Optional[Path],
+    log_level: str,
 ) -> List[Tuple[Path, bool, str]]:
     allowed = {e.lower() if e.startswith(".") else "." + e.lower() for e in exts} if exts else None
     results = []
@@ -505,6 +510,7 @@ def walk_and_process(
                     extra_video_args,
                     force,
                     temp_dir,
+                    log_level,
                 )
                 results.append((p, ok, msg))
     return results
@@ -527,6 +533,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--extra-video-args", nargs=argparse.REMAINDER, help="Extra args passed to ffmpeg after video opts")
     p.add_argument("--force", action="store_true", help="Re-encode even if already AV1 + Opus")
     p.add_argument("--temp-dir", default=None, help="Directory for temp files (must be on same drive as input to allow atomic replace; falls back to input folder if different drive)")
+    p.add_argument("--log-level", default="warning", choices=["quiet","error","warning","info","verbose","debug"], help="FFmpeg log level (default: warning). Use error to suppress repeated warnings.")
     return p.parse_args(argv)
 
 
@@ -562,6 +569,7 @@ def main(argv: Optional[List[str]] = None):
         extra_video_args=extra_video_args,
         force=args.force,
         temp_dir=Path(args.temp_dir) if args.temp_dir else None,
+        log_level=args.log_level,
     )
 
     # Summary
